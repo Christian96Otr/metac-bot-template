@@ -686,7 +686,7 @@ if __name__ == "__main__":
     forecast_model = os.getenv(
         "TEST_FORECAST_MODEL" if is_test_mode else "FORECAST_MODEL",
         (
-            "openrouter/openrouter/free"
+            "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free"
             if is_test_mode
             else "openrouter/openai/gpt-5-mini"
         ),
