@@ -1,0 +1,68 @@
+name: Run Bot on Custom Tournament
+
+on:
+  workflow_dispatch:
+    inputs:
+      tournament_id:
+        description: Metaculus tournament id or slug
+        required: true
+        default: market-pulse-26q3
+        type: string
+      publish:
+        description: Publish forecasts and comments to Metaculus
+        required: true
+        default: false
+        type: boolean
+      forecast_model:
+        description: LiteLLM/OpenRouter model name
+        required: true
+        default: openrouter/nvidia/nemotron-3-ultra-550b-a55b:free
+        type: string
+      research_model:
+        description: Research model name or no_research
+        required: true
+        default: no_research
+        type: string
+      predictions_per_question:
+        description: Forecasts to aggregate for each question
+        required: true
+        default: "3"
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  forecast_job:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install poetry
+        uses: snok/install-poetry@v1
+        with:
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+          installer-parallel: true
+      - name: Install dependencies
+        run: poetry install --no-interaction --no-root
+      - name: Run bot
+        run: poetry run python main.py --mode custom_tournament
+        env:
+          TARGET_TOURNAMENT_ID: ${{ inputs.tournament_id }}
+          PUBLISH_TO_METACULUS: ${{ inputs.publish }}
+          FORECAST_MODEL: ${{ inputs.forecast_model }}
+          RESEARCH_MODEL: ${{ inputs.research_model }}
+          PREDICTIONS_PER_RESEARCH_REPORT: ${{ inputs.predictions_per_question }}
+          SKIP_PREVIOUSLY_FORECASTED_QUESTIONS: "false"
+          METACULUS_TOKEN: ${{ secrets.METACULUS_TOKEN }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ASKNEWS_CLIENT_ID: ${{ secrets.ASKNEWS_CLIENT_ID }}
+          ASKNEWS_SECRET: ${{ secrets.ASKNEWS_SECRET }}
+
