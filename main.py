@@ -46,6 +46,16 @@ dotenv.load_dotenv()
 logger = logging.getLogger(__name__)
 
 
+class SerializedGeneralLlm(GeneralLlm):
+    """Keep OpenRouter requests sequential for low-budget/free accounts."""
+
+    _invocation_lock = asyncio.Lock()
+
+    async def invoke(self, prompt, system_prompt=None):
+        async with self._invocation_lock:
+            return await super().invoke(prompt, system_prompt)
+
+
 class SummerTemplateBot2026(ForecastBot):
     """
     This is the template bot for Summer 2026 Metaculus AI Tournament.
@@ -669,56 +679,69 @@ if __name__ == "__main__":
     print_startup_banner(run_mode, will_publish=publish_to_metaculus)
 
     # Pin explicit OpenRouter models instead of relying on forecasting-tools'
-    # provider defaults.  The old default selected gpt-4o-search-preview, which
-    # OpenRouter no longer serves.  Environment variables keep model changes
-    # configurable without committing credentials or editing the workflow.
+    # provider defaults. The test workflow uses OpenRouter's zero-cost router
+    # and skips paid web research. Live workflows retain separate configurable
+    # models and remain disabled until testing is stable.
+    is_test_mode = run_mode == "test_questions"
     forecast_model = os.getenv(
-        "FORECAST_MODEL", "openrouter/openai/gpt-5-mini"
+        "TEST_FORECAST_MODEL" if is_test_mode else "FORECAST_MODEL",
+        (
+            "openrouter/openrouter/free"
+            if is_test_mode
+            else "openrouter/openai/gpt-5-mini"
+        ),
     )
     research_model = os.getenv(
-        "RESEARCH_MODEL", "openrouter/openai/gpt-5-mini:online"
+        "TEST_RESEARCH_MODEL" if is_test_mode else "RESEARCH_MODEL",
+        "no_research" if is_test_mode else "openrouter/openai/gpt-5-mini:online",
     )
+    max_output_tokens = int(os.getenv("MAX_OUTPUT_TOKENS", "8000"))
 
-    # Configure the bot. The `llms=` block below is commented out to use
-    # whichever default models forecasting-tools picks based on your env vars;
-    # uncomment and edit to pin specific models.
+    # Configure the bot with explicit, environment-overridable models.
     template_bot = SummerTemplateBot2026(
         research_reports_per_question=1,
         predictions_per_research_report=(
             1 if run_mode == "test_questions" else 5
         ),
         use_research_summary_to_forecast=False,
+        enable_summarize_research=not is_test_mode,
         publish_reports_to_metaculus=publish_to_metaculus,
         folder_to_save_reports_to=None,
         skip_previously_forecasted_questions=True,
         extra_metadata_in_explanation=True,
         llms={
-            "default": GeneralLlm(
+            "default": SerializedGeneralLlm(
                 model=forecast_model,
-                max_tokens=8_000,
+                max_tokens=max_output_tokens,
                 timeout=120,
                 allowed_tries=3,
             ),
-            "summarizer": GeneralLlm(
+            "summarizer": SerializedGeneralLlm(
                 model=forecast_model,
-                max_tokens=8_000,
+                max_tokens=max_output_tokens,
                 timeout=120,
                 allowed_tries=3,
             ),
-            "researcher": GeneralLlm(
-                model=research_model,
-                max_tokens=8_000,
-                timeout=120,
-                allowed_tries=3,
+            "researcher": (
+                research_model
+                if research_model == "no_research"
+                else SerializedGeneralLlm(
+                    model=research_model,
+                    max_tokens=max_output_tokens,
+                    timeout=120,
+                    allowed_tries=3,
+                )
             ),
-            "parser": GeneralLlm(
+            "parser": SerializedGeneralLlm(
                 model=forecast_model,
-                max_tokens=8_000,
+                max_tokens=max_output_tokens,
                 timeout=120,
                 allowed_tries=3,
             ),
         },
     )
+    if is_test_mode:
+        template_bot._structure_output_validation_samples = 1
 
     # Per-mode tournament URL shown in the summary banner footer. These
     # piggyback on the forecasting_tools SDK constants and need updating
