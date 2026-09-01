@@ -722,6 +722,7 @@ if __name__ == "__main__":
         "no_research" if is_test_mode else "openrouter/openai/gpt-5-mini:online",
     )
     max_output_tokens = int(os.getenv("MAX_OUTPUT_TOKENS", "8000"))
+    max_questions_per_run = int(os.getenv("MAX_QUESTIONS_PER_RUN", "0"))
     predictions_per_research_report = int(
         os.getenv(
             "PREDICTIONS_PER_RESEARCH_REPORT",
@@ -774,8 +775,12 @@ if __name__ == "__main__":
             ),
         },
     )
-    if is_test_mode:
-        template_bot._structure_output_validation_samples = 1
+    template_bot._structure_output_validation_samples = int(
+        os.getenv(
+            "STRUCTURE_OUTPUT_VALIDATION_SAMPLES",
+            "1" if is_test_mode or not publish_to_metaculus else "2",
+        )
+    )
 
     # Per-mode tournament URL shown in the summary banner footer. These
     # piggyback on the forecasting_tools SDK constants and need updating
@@ -806,9 +811,18 @@ if __name__ == "__main__":
         )
         forecast_reports = seasonal_tournament_reports + minibench_reports
     elif run_mode == "custom_tournament":
+        custom_questions = client.get_all_open_questions_from_tournament(
+            target_tournament_id
+        )
+        if max_questions_per_run > 0:
+            custom_questions = custom_questions[:max_questions_per_run]
+            logger.info(
+                "Limiting custom tournament run to %s question(s).",
+                max_questions_per_run,
+            )
         forecast_reports = asyncio.run(
-            template_bot.forecast_on_tournament(
-                target_tournament_id, return_exceptions=True
+            template_bot.forecast_questions(
+                custom_questions, return_exceptions=True
             )
         )
     elif run_mode == "metaculus_cup":
