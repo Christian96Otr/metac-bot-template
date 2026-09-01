@@ -695,21 +695,25 @@ if __name__ == "__main__":
         llms={
             "default": GeneralLlm(
                 model=forecast_model,
+                max_tokens=8_000,
                 timeout=120,
                 allowed_tries=3,
             ),
             "summarizer": GeneralLlm(
                 model=forecast_model,
+                max_tokens=8_000,
                 timeout=120,
                 allowed_tries=3,
             ),
             "researcher": GeneralLlm(
                 model=research_model,
+                max_tokens=8_000,
                 timeout=120,
                 allowed_tries=3,
             ),
             "parser": GeneralLlm(
                 model=forecast_model,
+                max_tokens=8_000,
                 timeout=120,
                 allowed_tries=3,
             ),
