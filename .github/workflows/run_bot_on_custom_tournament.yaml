@@ -26,7 +26,12 @@ on:
       predictions_per_question:
         description: Forecasts to aggregate for each question
         required: true
-        default: "3"
+        default: "1"
+        type: string
+      max_questions:
+        description: Safety limit; use 0 for every open question
+        required: true
+        default: "1"
         type: string
 
 concurrency:
@@ -60,6 +65,8 @@ jobs:
           FORECAST_MODEL: ${{ inputs.forecast_model }}
           RESEARCH_MODEL: ${{ inputs.research_model }}
           PREDICTIONS_PER_RESEARCH_REPORT: ${{ inputs.predictions_per_question }}
+          MAX_QUESTIONS_PER_RUN: ${{ inputs.max_questions }}
+          STRUCTURE_OUTPUT_VALIDATION_SAMPLES: "1"
           SKIP_PREVIOUSLY_FORECASTED_QUESTIONS: "false"
           METACULUS_TOKEN: ${{ secrets.METACULUS_TOKEN }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
