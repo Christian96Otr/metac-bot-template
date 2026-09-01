@@ -1,6 +1,7 @@
 import argparse
 import asyncio
 import logging
+import os
 from datetime import datetime, timezone
 from typing import Literal
 
@@ -667,28 +668,52 @@ if __name__ == "__main__":
     publish_to_metaculus = True
     print_startup_banner(run_mode, will_publish=publish_to_metaculus)
 
+    # Pin explicit OpenRouter models instead of relying on forecasting-tools'
+    # provider defaults.  The old default selected gpt-4o-search-preview, which
+    # OpenRouter no longer serves.  Environment variables keep model changes
+    # configurable without committing credentials or editing the workflow.
+    forecast_model = os.getenv(
+        "FORECAST_MODEL", "openrouter/openai/gpt-5-mini"
+    )
+    research_model = os.getenv(
+        "RESEARCH_MODEL", "openrouter/openai/gpt-5-mini:online"
+    )
+
     # Configure the bot. The `llms=` block below is commented out to use
     # whichever default models forecasting-tools picks based on your env vars;
     # uncomment and edit to pin specific models.
     template_bot = SummerTemplateBot2026(
         research_reports_per_question=1,
-        predictions_per_research_report=5,
+        predictions_per_research_report=(
+            1 if run_mode == "test_questions" else 5
+        ),
         use_research_summary_to_forecast=False,
         publish_reports_to_metaculus=publish_to_metaculus,
         folder_to_save_reports_to=None,
         skip_previously_forecasted_questions=True,
         extra_metadata_in_explanation=True,
-        # llms={
-        #     "default": GeneralLlm(
-        #         model="openrouter/openai/gpt-4o",
-        #         temperature=0.3,
-        #         timeout=40,
-        #         allowed_tries=2,
-        #     ),
-        #     "summarizer": "openai/gpt-4o-mini",
-        #     "researcher": "asknews/news-summaries",
-        #     "parser": "openai/gpt-4o-mini",
-        # },
+        llms={
+            "default": GeneralLlm(
+                model=forecast_model,
+                timeout=120,
+                allowed_tries=3,
+            ),
+            "summarizer": GeneralLlm(
+                model=forecast_model,
+                timeout=120,
+                allowed_tries=3,
+            ),
+            "researcher": GeneralLlm(
+                model=research_model,
+                timeout=120,
+                allowed_tries=3,
+            ),
+            "parser": GeneralLlm(
+                model=forecast_model,
+                timeout=120,
+                allowed_tries=3,
+            ),
+        },
     )
 
     # Per-mode tournament URL shown in the summary banner footer. These
@@ -743,3 +768,4 @@ if __name__ == "__main__":
         will_publish=publish_to_metaculus,
         tournament_url=TOURNAMENT_URLS.get(run_mode),
     )
+
