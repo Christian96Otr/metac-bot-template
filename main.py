@@ -667,15 +667,41 @@ if __name__ == "__main__":
     parser.add_argument(
         "--mode",
         type=str,
-        choices=["tournament", "metaculus_cup", "test_questions"],
+        choices=[
+            "tournament",
+            "custom_tournament",
+            "metaculus_cup",
+            "test_questions",
+        ],
         default="tournament",
         help="What to forecast on (default: tournament)",
     )
+    parser.add_argument(
+        "--tournament-id",
+        type=str,
+        default=None,
+        help=(
+            "Tournament id or slug for custom_tournament mode. "
+            "Can also be set with TARGET_TOURNAMENT_ID."
+        ),
+    )
     args = parser.parse_args()
-    run_mode: Literal["tournament", "metaculus_cup", "test_questions"] = args.mode
+    run_mode: Literal[
+        "tournament", "custom_tournament", "metaculus_cup", "test_questions"
+    ] = args.mode
+    target_tournament_id = args.tournament_id or os.getenv("TARGET_TOURNAMENT_ID")
+    if run_mode == "custom_tournament" and not target_tournament_id:
+        parser.error(
+            "custom_tournament mode requires --tournament-id or "
+            "TARGET_TOURNAMENT_ID"
+        )
 
     check_environment(strict=True)
-    publish_to_metaculus = True
+    publish_to_metaculus = os.getenv("PUBLISH_TO_METACULUS", "true").lower() in {
+        "1",
+        "true",
+        "yes",
+    }
     print_startup_banner(run_mode, will_publish=publish_to_metaculus)
 
     # Pin explicit OpenRouter models instead of relying on forecasting-tools'
@@ -696,18 +722,26 @@ if __name__ == "__main__":
         "no_research" if is_test_mode else "openrouter/openai/gpt-5-mini:online",
     )
     max_output_tokens = int(os.getenv("MAX_OUTPUT_TOKENS", "8000"))
+    predictions_per_research_report = int(
+        os.getenv(
+            "PREDICTIONS_PER_RESEARCH_REPORT",
+            "1" if is_test_mode else "5",
+        )
+    )
+    skip_previously_forecasted = os.getenv(
+        "SKIP_PREVIOUSLY_FORECASTED_QUESTIONS",
+        "false" if run_mode == "custom_tournament" else "true",
+    ).lower() in {"1", "true", "yes"}
 
     # Configure the bot with explicit, environment-overridable models.
     template_bot = SummerTemplateBot2026(
         research_reports_per_question=1,
-        predictions_per_research_report=(
-            1 if run_mode == "test_questions" else 5
-        ),
+        predictions_per_research_report=predictions_per_research_report,
         use_research_summary_to_forecast=False,
         enable_summarize_research=not is_test_mode,
         publish_reports_to_metaculus=publish_to_metaculus,
         folder_to_save_reports_to=None,
-        skip_previously_forecasted_questions=True,
+        skip_previously_forecasted_questions=skip_previously_forecasted,
         extra_metadata_in_explanation=True,
         llms={
             "default": SerializedGeneralLlm(
@@ -748,6 +782,9 @@ if __name__ == "__main__":
     # whenever those rotate seasons.
     TOURNAMENT_URLS = {
         "tournament": "https://www.metaculus.com/tournament/summer-futureeval-2026/",
+        "custom_tournament": (
+            f"https://www.metaculus.com/tournament/{target_tournament_id}/"
+        ),
         "metaculus_cup": "https://www.metaculus.com/tournament/metaculus-cup-summer-2025/",
         "test_questions": "https://www.metaculus.com/tournament/bot-testing-area/",
     }
@@ -768,6 +805,12 @@ if __name__ == "__main__":
             )
         )
         forecast_reports = seasonal_tournament_reports + minibench_reports
+    elif run_mode == "custom_tournament":
+        forecast_reports = asyncio.run(
+            template_bot.forecast_on_tournament(
+                target_tournament_id, return_exceptions=True
+            )
+        )
     elif run_mode == "metaculus_cup":
         # The Metaculus Cup may be uninitialized near the start of a season
         # (Jan/May/Sep). AXC_2025_TOURNAMENT_ID = 32564 and
